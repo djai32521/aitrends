@@ -79,8 +79,18 @@ if (fs.existsSync(path.join(__dirname, '.env.backup'))) {
 
 // 3. Deploy
 console.log("📤 Deploying to gh-pages...");
+
+// Add .nojekyll to prevent GitHub Pages from ignoring files starting with _
+const noJekyllPath = path.join(__dirname, 'dist', '.nojekyll');
 try {
-    execSync('npx gh-pages -d dist', { stdio: 'inherit' });
+    fs.writeFileSync(noJekyllPath, '');
+    console.log("✅ Created .nojekyll file");
+} catch (e) {
+    console.warn("⚠️ Failed to create .nojekyll file:", e);
+}
+
+try {
+    execSync('npx gh-pages -d dist -t', { stdio: 'inherit' }); // Added -t (dotfiles) just in case, though .nojekyll is usually enough
     console.log("✅ Deployed successfully!");
 } catch (e) {
     console.error("❌ Deployment failed:", e);
