@@ -1,13 +1,30 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiAnalysisResult, TrendItem } from "../types";
 
-const apiKey = process.env.API_KEY;
+import { decryptKey } from "../utils/crypto";
+
+const getApiKey = () => {
+  // 1. Try encrypted key (Deployment / Secure)
+  const encrypted = import.meta.env.VITE_GEMINI_API_KEY_ENCRYPTED;
+  if (encrypted) return decryptKey(encrypted);
+
+  // 2. Try plain key (Dev / Legacy)
+  if (import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
+
+  // 3. Fallback to process.env (Existing setup support)
+  // @ts-ignore
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) return process.env.API_KEY;
+
+  return null;
+}
+
+const apiKey = getApiKey();
 const ai = apiKey ? new GoogleGenAI({ apiKey: apiKey }) : null;
 
 export const analyzeTrendWithGemini = async (
   trend: TrendItem
 ): Promise<GeminiAnalysisResult> => {
-  
+
   if (!apiKey || !ai) {
     return {
       summary: "API 키가 설정되지 않아 AI 분석을 수행할 수 없습니다. .env 파일에 API_KEY를 설정해주세요.",
@@ -20,11 +37,11 @@ export const analyzeTrendWithGemini = async (
     // Construct context from News Items if available, otherwise fallback to description
     let contextData = "";
     if (trend.newsItems && trend.newsItems.length > 0) {
-        contextData = trend.newsItems.map((news, idx) => 
-            `Article ${idx + 1}:\nTitle: ${news.title}\nSource: ${news.source}\nSnippet: ${news.snippet}`
-        ).join("\n\n");
+      contextData = trend.newsItems.map((news, idx) =>
+        `Article ${idx + 1}:\nTitle: ${news.title}\nSource: ${news.source}\nSnippet: ${news.snippet}`
+      ).join("\n\n");
     } else {
-        contextData = trend.description || "No specific details available.";
+      contextData = trend.description || "No specific details available.";
     }
 
     const prompt = `
@@ -74,18 +91,18 @@ export const analyzeTrendWithGemini = async (
 };
 
 export const translateTrendsToKorean = async (trends: TrendItem[]): Promise<TrendItem[]> => {
-    if (!apiKey || !ai) return trends;
+  if (!apiKey || !ai) return trends;
 
-    try {
-        // Prepare a minimized payload to save tokens and latency
-        // We translate the Trend Title and the titles of the first 2 news items
-        const payload = trends.map((t, index) => ({
-            id: index,
-            t: t.title,
-            n: t.newsItems?.slice(0, 2).map(n => n.title) || []
-        }));
+  try {
+    // Prepare a minimized payload to save tokens and latency
+    // We translate the Trend Title and the titles of the first 2 news items
+    const payload = trends.map((t, index) => ({
+      id: index,
+      t: t.title,
+      n: t.newsItems?.slice(0, 2).map(n => n.title) || []
+    }));
 
-        const prompt = `
+    const prompt = `
             You are a professional news translator. Translate the following list of trending topics and news headlines from their source language (English, Japanese, French, etc.) to Korean.
             - Ensure the translation is natural and suitable for a news dashboard.
             - Maintain the proper nouns (names of people, companies) correctly in Korean.
@@ -96,62 +113,62 @@ export const translateTrendsToKorean = async (trends: TrendItem[]): Promise<Tren
             [{ "id": number, "t": "Korean Title", "n": ["Korean News 1", "Korean News 2"] }, ...]
         `;
 
-        const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json"
-            }
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    const text = response.text;
+    if (!text) return trends;
+
+    const translations = JSON.parse(text);
+
+    // Map translations back to the original trends objects
+    // We create a shallow copy of trends and update titles/news titles
+    return trends.map((trend, index) => {
+      const trans = translations.find((tr: any) => tr.id === index);
+      if (!trans) return trend;
+
+      const newNewsItems = trend.newsItems ? [...trend.newsItems] : [];
+      // Update news titles
+      if (trans.n && Array.isArray(trans.n)) {
+        trans.n.forEach((translatedTitle: string, idx: number) => {
+          if (newNewsItems[idx]) {
+            newNewsItems[idx] = { ...newNewsItems[idx], title: translatedTitle };
+          }
         });
+      }
 
-        const text = response.text;
-        if (!text) return trends;
+      return {
+        ...trend,
+        title: trans.t || trend.title,
+        newsItems: newNewsItems
+      };
+    });
 
-        const translations = JSON.parse(text);
-        
-        // Map translations back to the original trends objects
-        // We create a shallow copy of trends and update titles/news titles
-        return trends.map((trend, index) => {
-            const trans = translations.find((tr: any) => tr.id === index);
-            if (!trans) return trend;
-
-            const newNewsItems = trend.newsItems ? [...trend.newsItems] : [];
-            // Update news titles
-            if (trans.n && Array.isArray(trans.n)) {
-                trans.n.forEach((translatedTitle: string, idx: number) => {
-                    if (newNewsItems[idx]) {
-                        newNewsItems[idx] = { ...newNewsItems[idx], title: translatedTitle };
-                    }
-                });
-            }
-
-            return {
-                ...trend,
-                title: trans.t || trend.title,
-                newsItems: newNewsItems
-            };
-        });
-
-    } catch (error) {
-        console.error("Translation Error:", error);
-        return trends; // Fallback to original if translation fails
-    }
+  } catch (error) {
+    console.error("Translation Error:", error);
+    return trends; // Fallback to original if translation fails
+  }
 };
 
 export const generateBlogPost = async (trends: TrendItem[]): Promise<string> => {
-    if (!apiKey || !ai) return "API 키가 설정되지 않았습니다.";
+  if (!apiKey || !ai) return "API 키가 설정되지 않았습니다.";
 
-    // Take top 10 trends
-    const topTrends = trends.slice(0, 10);
-    const dateStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
-    const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-    
-    // Prepare minimized context
-    const context = topTrends.map((t, i) => 
-        `${i+1}. ${t.title} (Traffic: ${t.approx_traffic})\n   Info: ${t.newsItems?.[0]?.title || t.description}`
-    ).join("\n\n");
+  // Take top 10 trends
+  const topTrends = trends.slice(0, 10);
+  const dateStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+  const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 
-    const prompt = `
+  // Prepare minimized context
+  const context = topTrends.map((t, i) =>
+    `${i + 1}. ${t.title} (Traffic: ${t.approx_traffic})\n   Info: ${t.newsItems?.[0]?.title || t.description}`
+  ).join("\n\n");
+
+  const prompt = `
         You are a professional Tech & Lifestyle blogger in South Korea.
         Write a blog post about today's top 10 real-time search trends.
         
@@ -176,18 +193,18 @@ export const generateBlogPost = async (trends: TrendItem[]): Promise<string> => 
         - Short paragraphs.
     `;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-3-pro-preview", 
-            contents: prompt,
-        });
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-pro-preview",
+      contents: prompt,
+    });
 
-        let content = response.text || "";
-        content = content.replace(/^```markdown\s*/, '').replace(/^```\s*/, '').replace(/```$/, '');
-        
-        return content;
-    } catch (error) {
-        console.error("Blog Generation Error:", error);
-        return "블로그 글을 생성하는 중 오류가 발생했습니다.";
-    }
+    let content = response.text || "";
+    content = content.replace(/^```markdown\s*/, '').replace(/^```\s*/, '').replace(/```$/, '');
+
+    return content;
+  } catch (error) {
+    console.error("Blog Generation Error:", error);
+    return "블로그 글을 생성하는 중 오류가 발생했습니다.";
+  }
 };

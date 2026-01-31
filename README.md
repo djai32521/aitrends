@@ -15,6 +15,14 @@ View your app in AI Studio: https://ai.studio/apps/drive/1ACjddzQccExTRREzXxHFfr
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Configure your Gemini API Key:
+   - For **Development**: Create a `.env` file and add:
+     ```
+     VITE_GEMINI_API_KEY=your_actual_api_key
+     ```
+   - For **Deployment** (Secure):
+     1. Run the encryption script: `node encrypt-key.js <YOUR_API_KEY>`
+     2. Copy the output `VITE_GEMINI_API_KEY_ENCRYPTED=...` into your `.env` or deployment secrets.
+
 3. Run the app:
    `npm run dev`
