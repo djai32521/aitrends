@@ -23,14 +23,16 @@ let fileContent = '';
 
 if (fs.existsSync(envPath)) {
     fileContent = fs.readFileSync(envPath, 'utf-8');
-    const match = fileContent.match(/VITE_GEMINI_API_KEY=(.+)/);
+    // Regex matches VITE_GEMINI_API_KEY or GEMINI_API_KEY, handles quotes ' or "
+    const match = fileContent.match(/(?:VITE_)?GEMINI_API_KEY=["']?([^"'\n]+)["']?/);
     if (match && match[1]) {
         plainKey = match[1].trim();
+        console.log("🔑 Found API Key in .env");
     }
 }
 
 if (!plainKey) {
-    console.log("⚠️ No VITE_GEMINI_API_KEY found in .env. Assuming key is already encrypted or not set.");
+    console.log("⚠️ No VITE_GEMINI_API_KEY or GEMINI_API_KEY found in .env. Assuming key is already encrypted or not set.");
 }
 
 // 2. Prepare Environment for Build
@@ -40,15 +42,9 @@ if (plainKey) {
     const encryptedKey = encrypt(plainKey);
     env.VITE_GEMINI_API_KEY_ENCRYPTED = encryptedKey;
 
-    // CRITICAL: Remove the plain key so Vite doesn't inline it!
+    // CRITICAL: Remove the plain key variables so Vite doesn't inline them!
     delete env.VITE_GEMINI_API_KEY;
-    // Also remove from the loaded content if it was loaded by dotenv inside Vite (Vite does load .env files)
-    // To be absolutely sure, we can temporarily rename .env, but that's risky if the script crashes.
-    // Instead, we will rely on defining the variables explicitly in the build command or relying on the fact that we passed `env` 
-    // BUT Vite loads .env from file system automatically.
-    // To prevent Vite from loading .env, we can pass `--mode production` (standard via vite build) 
-    // BUT Vite STILL loads .env!
-    // We must ensure Vite does NOT see the plain key.
+    delete env.GEMINI_API_KEY;
 }
 
 console.log("🚀 Starting Secure Build...");
@@ -56,7 +52,12 @@ console.log("🚀 Starting Secure Build...");
 // Strategy to prevent Vite from reading the plain key from .env file:
 // We will rename .env to .env.backup temporarily during the build.
 if (fs.existsSync(envPath)) {
-    fs.renameSync(envPath, path.join(__dirname, '.env.backup'));
+    try {
+        fs.renameSync(envPath, path.join(__dirname, '.env.backup'));
+        console.log("🙈 Temporarily hid .env file");
+    } catch (e) {
+        console.warn("⚠️ Failed to hide .env file, proceeding with caution:", e);
+    }
 }
 
 try {
