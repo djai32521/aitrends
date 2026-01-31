@@ -1,0 +1,5 @@
+{
+  "name": "AI Trends",
+  "description": "A real-time dashboard displaying trending topics in South Korea and US using Google Trends RSS, featuring AI-powered insights.",
+  "requestFramePermissions": []
+}
